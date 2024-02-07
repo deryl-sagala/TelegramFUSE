@@ -1,20 +1,24 @@
-import logging
-logging.basicConfig(filename='example.log', encoding='utf-8', level=logging.DEBUG)
-from telethon import TelegramClient, events, sync, utils
-from dotenv import load_dotenv
-import os
-from io import BytesIO
-from cryptography.fernet import Fernet
-from collections import defaultdict
-from cachetools import LRUCache
 import gc
+import logging
+import os
+from collections import defaultdict
+from io import BytesIO
+
+from cachetools import LRUCache
+from cryptography.fernet import Fernet
+from dotenv import load_dotenv
+from telethon import TelegramClient, events, sync, utils
+
+logging.basicConfig(filename="example.log", encoding="utf-8", level=logging.DEBUG)
 
 load_dotenv()
 
-FILE_MAX_SIZE_BYTES = int(2 * 1e9) # 2GB
+FILE_MAX_SIZE_BYTES = int(2 * 1e9)  # 2GB
 
 # Real LRU cache implementation very cool
-CACHE_MAXSIZE = 5e9 # 5GB
+CACHE_MAXSIZE = 5e9  # 5GB
+
+
 def getsizeofelt(val):
     try:
         s = len(val)
@@ -22,12 +26,14 @@ def getsizeofelt(val):
     except:
         return 1
 
+
 def progress_cb(sent_bytes, total):
-    percentTotal = int(sent_bytes/total * 100)
+    percentTotal = int(sent_bytes / total * 100)
     if percentTotal % 5 == 0:
         print(f"Progress: {percentTotal}%...")
 
-class TelegramFileClient():
+
+class TelegramFileClient:
     def __init__(self, session_name, api_id, api_hash, channel_link):
         self.client = TelegramClient(session_name, api_id, api_hash)
         self.client.start()
@@ -50,7 +56,7 @@ class TelegramFileClient():
 
         if self.encryption_key != None:
             print("ENCRYPTING")
-            f = Fernet(bytes(self.encryption_key, 'utf-8'))
+            f = Fernet(bytes(self.encryption_key, "utf-8"))
             file_bytes = f.encrypt(file_bytes)
 
         chunks = []
@@ -64,7 +70,7 @@ class TelegramFileClient():
         if file_len > FILE_MAX_SIZE_BYTES:
             # Calculate the number of chunks needed
             num_chunks = (len(file_bytes) + FILE_MAX_SIZE_BYTES) // FILE_MAX_SIZE_BYTES
-            
+
             if isinstance(num_chunks, float):
                 print("UH OH num_chunks IS FLOAT", num_chunks)
 
@@ -80,35 +86,40 @@ class TelegramFileClient():
 
         upload_results = []
 
-        fname=file_name
+        fname = file_name
 
         i = 0
         for c in chunks:
-            fname = f"{file_name}_part{i}.txt" # convert everything to text. tgram is weird about some formats
-            f = self.client.upload_file(c, file_name=fname, part_size_kb=512, progress_callback=progress_cb)
+            # convert everything to text. tgram is weird about some formats
+            fname = f"{file_name}_part{i}.txt"
+            f = self.client.upload_file(
+                c, file_name=fname, part_size_kb=512, progress_callback=progress_cb
+            )
             result = self.client.send_file(self.channel_entity, f)
             upload_results.append(result)
             i += 1
 
         self.fname_to_msgs[file_name] = tuple([m.id for m in upload_results])
-        print(f"CACHED FILE! NEW SIZE: {self.cached_files.currsize}; maxsize: {self.cached_files.maxsize}")
+        print(
+            f"CACHED FILE! NEW SIZE: {self.cached_files.currsize}; maxsize: {self.cached_files.maxsize}"
+        )
         return upload_results
 
     def get_cached_file(self, fh):
-        if fh in self.cached_files and self.cached_files[fh] != bytearray(b''):
+        if fh in self.cached_files and self.cached_files[fh] != bytearray(b""):
             print("CACHE HIT")
             return self.cached_files[fh]
         return None
 
     # download entire file from telegram
     def download_file(self, fh, msgIds):
-        if fh in self.cached_files and self.cached_files[fh] != bytearray(b''):
+        if fh in self.cached_files and self.cached_files[fh] != bytearray(b""):
             print("CACHE HIT in download")
             return self.cached_files[fh]
         msgs = self.get_messages(msgIds)
         buf = BytesIO()
         for m in msgs:
-            buf.write(self.download_message(m)) # error handling WHO??
+            buf.write(self.download_message(m))  # error handling WHO??
         numBytes = buf.getbuffer().nbytes
         print(f"Downloaded file is size {numBytes}")
         buf.seek(0)
@@ -116,7 +127,7 @@ class TelegramFileClient():
 
         if self.encryption_key != None:
             print("DECRYPTING")
-            f = Fernet(bytes(self.encryption_key, 'utf-8'))
+            f = Fernet(bytes(self.encryption_key, "utf-8"))
             readBytes = f.decrypt(readBytes)
 
         barr = bytearray(readBytes)
@@ -131,6 +142,6 @@ class TelegramFileClient():
     def download_message(self, msg):
         result = msg.download_media(bytes)
         return result
-    
+
     def delete_messages(self, ids):
         return self.client.delete_messages(self.channel_entity, message_ids=ids)
